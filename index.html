@@ -718,6 +718,21 @@ textarea.text-input { min-height: 100px; resize: vertical; }
 </div>
 
 <!-- ═══════════════════════════════════════════════════ AGE GATE ═══ -->
+<!-- ═══════════════ SET NEW PASSWORD (password recovery) ═══ -->
+<div id="screen-newpassword" class="modal-overlay" style="display:none;z-index:9999">
+  <div class="modal" style="max-width:380px;text-align:center" onclick="event.stopPropagation()">
+    <div style="width:64px;height:64px;background:linear-gradient(135deg,#f97316,#ea6c10);border-radius:18px;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;box-shadow:0 4px 20px rgba(249,115,22,0.3)">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width:32px;height:32px;fill:white"><path d="M12 17a2 2 0 0 1-2-2c0-1.11.89-2 2-2a2 2 0 0 1 2 2 2 2 0 0 1-2 2m6-9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10c0-1.11.89-2 2-2h1V6a5 5 0 0 1 5-5 5 5 0 0 1 5 5v2h1m-6-5a3 3 0 0 0-3 3v2h6V6a3 3 0 0 0-3-3z"/></svg>
+    </div>
+    <div style="font-size:22px;font-weight:800;margin-bottom:10px">Set a new password</div>
+    <div style="color:#64748b;font-size:14px;line-height:1.6;margin-bottom:20px">You&rsquo;re signed in via your reset link. Choose a new password to finish.</div>
+    <div id="newpw-msg" class="auth-msg" style="display:none"></div>
+    <div class="auth-field" style="text-align:left"><label class="auth-label">New password</label><input class="auth-input" type="password" id="newpw-input" placeholder="At least 6 characters" autocomplete="new-password"/></div>
+    <button class="btn-primary" id="newpw-btn" onclick="submitNewPassword()" style="margin-bottom:10px">Save new password</button>
+    <button onclick="skipNewPassword()" style="background:none;border:none;color:#64748b;font-family:'Outfit',sans-serif;font-size:13px;cursor:pointer;display:block;margin:0 auto;padding:8px">Skip for now</button>
+  </div>
+</div>
+
 <div id="screen-agegate" class="modal-overlay" style="display:none;z-index:9999">
   <div class="modal" style="max-width:380px;text-align:center" onclick="event.stopPropagation()">
     <div style="width:64px;height:64px;background:linear-gradient(135deg,#f97316,#ea6c10);border-radius:18px;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;box-shadow:0 4px 20px rgba(249,115,22,0.3)">
@@ -2728,6 +2743,29 @@ async function signOut() {
   await _supabase.auth.signOut();
 }
 
+function showNewPwMsg(msg, type) {
+  const el = document.getElementById("newpw-msg");
+  el.textContent = msg;
+  el.className = "auth-msg " + type;
+  el.style.display = "block";
+}
+
+async function submitNewPassword() {
+  const pw = document.getElementById("newpw-input").value;
+  const btn = document.getElementById("newpw-btn");
+  if (!pw || pw.length < 6) { showNewPwMsg("Password must be at least 6 characters.", "error"); return; }
+  btn.disabled = true; btn.textContent = "Saving...";
+  const { error } = await _supabase.auth.updateUser({ password: pw });
+  btn.disabled = false; btn.textContent = "Save new password";
+  if (error) { showNewPwMsg(error.message, "error"); return; }
+  document.getElementById("screen-newpassword").style.display = "none";
+  document.getElementById("newpw-input").value = "";
+}
+
+function skipNewPassword() {
+  document.getElementById("screen-newpassword").style.display = "none";
+}
+
 async function loadCredits() {
   if (!_user) return;
   const { data } = await _supabase.from("user_credits").select("credits").eq("id", _user.id).single();
@@ -2780,6 +2818,11 @@ function acceptAgeGate() {
 
 // Listen for auth changes
 _supabase.auth.onAuthStateChange(async (event, session) => {
+  if (event === "PASSWORD_RECOVERY") {
+    // User arrived via a password-reset link: they are signed in,
+    // but we prompt them to choose a new password before continuing.
+    document.getElementById("screen-newpassword").style.display = "flex";
+  }
   if (event === "SIGNED_IN" && session) {
     _session = session;
     _user = session.user;
@@ -2888,5 +2931,29 @@ if (_stripeParams.get("payment") === "success") {
     <div style="text-align:center;color:#94a3b8;font-size:12px">Secure payment via Stripe</div>
   </div>
 </div>
+<script>
+// Hide web-only UI when running inside the native Capacitor app.
+// OAuth and magic-link flows redirect through the browser and are
+// deferred to v1.1 on native; email/password works natively today.
+(function() {
+  if (!window.Capacitor) return;
+  var style = document.createElement('style');
+  style.textContent = '.btn-google, .btn-apple, .auth-divider { display: none !important; }';
+  document.head.appendChild(style);
+  document.addEventListener('DOMContentLoaded', function() {
+    // Magic-link button (no class/id — find it by its onclick)
+    var magic = document.querySelector('button[onclick="sendMagicLink()"]');
+    if (magic) magic.style.display = 'none';
+    // "Install as app" banner: walk text nodes to find it
+    var divs = document.querySelectorAll('div');
+    for (var i = 0; i < divs.length; i++) {
+      if (divs[i].textContent.indexOf('Install as app') !== -1 && divs[i].children.length < 3) {
+        divs[i].style.display = 'none';
+        break;
+      }
+    }
+  });
+})();
+</script>
 </body>
 </html>
